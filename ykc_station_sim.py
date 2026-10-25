@@ -12,7 +12,7 @@ v1.6. Во время зарядки шлёт 0x15, 0x17, затем 0x13 + 0x23
 Веб-панель: http://127.0.0.1:8790 (открывается сама).
 
     python ykc_station_sim.py                                  # 127.0.0.1:8767, станция 999
-    python ykc_station_sim.py --host 155.212.143.161 --id 32010600019236 --power 120
+    python ykc_station_sim.py --host platform.example.com --id 32010200000001 --power 120
 
 Команды (в консоли или в панели; N — номер пистолета):
     plug N / unplug N      вставить / вынуть пистолет
