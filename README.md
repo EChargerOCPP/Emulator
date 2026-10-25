@@ -33,6 +33,7 @@ python ykc_station_sim.py --host platform.example.com --id 32010200000001 --powe
 | `fault N 0x0001` | биты неисправности (0 — сброс) |
 | `lock N up\|down` | замок парковки (с `--lock`) |
 | `set power\|voltage\|capacity\|soc\|meter X` | изменить параметр |
+| `gunstatus N auto\|0-3` | статус пистолета в 0x13: 0 офлайн, 1 неисправность, 2 свободен, 3 зарядка; `auto` — по состоянию |
 | `rt N` | отправить 0x13 сейчас |
 | `connect HOST PORT ID [GUNS]` | подключиться к другой платформе / другим номером станции (в панели — «Настройки») |
 | `status`, `reconnect`, `quit` | |

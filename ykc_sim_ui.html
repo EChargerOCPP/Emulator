@@ -239,6 +239,7 @@ const FAULTS = ["аварийная кнопка","нет выпрямитель
   "нет связи с DC20","нет связи с FC08","нет связи со счётчиком","нет связи со считывателем","нет связи с RC10",
   "плата вентиляторов","предохранитель DC","высоковольтный контактор","дверь открыта"];
 const TRADE = {1: "приложение", 2: "карта", 4: "офлайн-карта", 5: "VIN"};
+const GUN_STATUS = {0: "офлайн", 1: "неисправность", 2: "свободен", 3: "зарядка"};   // YKC 1.6, кадр 0x13
 const PERIODS = ["尖 пиковый+", "峰 пиковый", "平 обычный", "谷 ночной"];
 const CONN = {online: "в сети", login: "вход…", offline: "нет связи"};
 const $ = s => document.querySelector(s);
@@ -261,7 +262,7 @@ function gunCard(g) {
   const m = (k, v, unit = "") => `<div class="metric"><div class="k">${k}</div><div class="v">${v} <small>${unit}</small></div></div>`;
   const charging = !!s;
   let html = `<div class="card" data-gun="${g.no}">
-    <div class="gun-head"><h3>Пистолет ${g.no}</h3><span class="pill s-${g.status}">${esc(g.statusName)}</span></div>`;
+    <div class="gun-head"><h3>Пистолет ${g.no}</h3><span class="pill s-${g.status}" ${g.forcedStatus !== null ? 'title="статус задан вручную"' : ""}>${esc(g.statusName)}${g.forcedStatus !== null ? " · вручную" : ""}</span></div>`;
   html += `<div class="big">${m("Энергия", `<i data-m="kwh">${s ? fmt(s.kwh, 3) : "—"}</i>`, "кВт·ч")}${m("Сумма", `<i data-m="amount">${s ? fmt(s.amount) : "—"}</i>`)}${m("SOC", `<i data-m="soc">${s ? Math.floor(s.soc) : "—"}</i>`, "%")}</div>`;
   html += `<div class="soc"><div data-m="bar" style="width:${s ? s.soc : 0}%"></div></div>`;
   if (s) html += `<div class="kv">
@@ -272,6 +273,13 @@ function gunCard(g) {
       ${state.lockEnabled ? `<span>Замок</span><span>${g.lock === 0x55 ? "поднят" : g.lock === 0xFF ? "опущен" : "не в положении"}</span>` : ""}</div>`;
   if (g.faultNames.length) html += `<div class="faults">${g.faultNames.map(f => `<span class="tag">${esc(f)}</span>`).join("")}</div>`;
   if (g.waiting) html += `<div class="wait">${esc(g.waiting)}</div>`;
+  html += `<div class="row" style="margin-bottom:8px">
+      <label class="meta" style="display:flex; gap:8px; align-items:center">Статус (0x13)
+        <select data-gunstatus="${g.no}" title="байт статуса в кадре 0x13; «авто» — по состоянию симулятора">
+          <option value="auto" ${g.forcedStatus === null ? "selected" : ""}>авто</option>
+          ${Object.entries(GUN_STATUS).map(([v, n]) => `<option value="${v}" ${g.forcedStatus === +v ? "selected" : ""}>0x0${v} ${n}</option>`).join("")}
+        </select></label>
+    </div>`;
   html += `<div class="row">
       <button data-cmd="${g.plugged ? "unplug" : "plug"} ${g.no}">${g.plugged ? "Вынуть пистолет" : "Вставить пистолет"}</button>
       <button class="danger" data-cmd="stop ${g.no}" ${charging ? "" : "disabled"}>Стоп на станции</button>
@@ -301,7 +309,8 @@ document.addEventListener("change", e => {
     const g = state.guns.find(x => x.no == t.dataset.g);
     const v = g.ownFault ^ (1 << +t.dataset.bit);
     send(`fault ${g.no} 0x${v.toString(16)}`);
-  } else if (t.dataset.set) send(`set ${t.dataset.set} ${t.value}`);
+  } else if (t.dataset.gunstatus) send(`gunstatus ${t.dataset.gunstatus} ${t.value}`);
+  else if (t.dataset.set) send(`set ${t.dataset.set} ${t.value}`);
 });
 document.addEventListener("input", e => { if (e.target.dataset.card) cards[e.target.dataset.card] = e.target.value.trim(); });
 

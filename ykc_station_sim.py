@@ -25,6 +25,7 @@ v1.6. Во время зарядки шлёт 0x15, 0x17, затем 0x13 + 0x23
     fault N 0x0001         задать биты неисправности (0 — сбросить)
     lock N up|down         замок парковки (только с --lock)
     set power|voltage|capacity|soc|meter ЗНАЧЕНИЕ
+    gunstatus N auto|0-3   статус в 0x13: 0 офлайн, 1 неисправность, 2 свободен, 3 зарядка (auto — по состоянию)
     rt N                   отправить 0x13 сейчас
     status                 состояние пистолетов
     connect HOST PORT ID [GUNS]  подключиться к другой платформе / другим номером станции
@@ -182,6 +183,7 @@ class Gun:
         self.card_wait: bytes | None = None     # карта, по которой ждём 0x32/0xA2
         self.lock = 0xFF                        # замок парковки опущен
         self.last_idle_rt = 0.0
+        self.forced_status: int | None = None   # статус в 0x13, заданный вручную (None — по состоянию)
 
 
 class Station:
@@ -232,6 +234,8 @@ class Station:
         return g.fault | (DOOR_OPEN if self.door_open else 0)
 
     def gun_status(self, g: Gun) -> int:
+        if g.forced_status is not None:
+            return g.forced_status
         if g.session:
             return 0x03
         return 0x01 if self.gun_fault(g) or self.disabled else 0x02
@@ -244,14 +248,14 @@ class Station:
         return self.pile + gun_bcd(g.no) + bcd_now() + bytes.fromhex(f"{self.trans_counter:04d}")
 
     def send_heartbeat(self, g: Gun) -> None:
-        self.send(0x03, self.pile + gun_bcd(g.no) + bytes([1 if self.gun_fault(g) else 0]))
+        self.send(0x03, self.pile + gun_bcd(g.no) + bytes([1 if self.gun_fault(g) or self.gun_status(g) == 0x01 else 0]))
 
     def send_realtime(self, g: Gun, seq: int | None = None) -> None:
         s = g.session
         if s:
             volts, amps = self.a.voltage, self.power() * 1000 / self.a.voltage
             remaining = max(0, (100 - s.soc) / 100 * self.a.capacity / max(self.power(), 1) * 60)
-            body = (s.trans + self.pile + gun_bcd(g.no) + bytes([0x03, 0x02, 0x01])
+            body = (s.trans + self.pile + gun_bcd(g.no) + bytes([self.gun_status(g), 0x02, 0x01])
                     + u(volts * 10, 2) + u(amps * 10, 2) + bytes([25 + 50]) + bytes(8)
                     + bytes([int(s.soc), 30 + 50]) + u(s.minutes, 2) + u(remaining, 2)
                     + u(s.total_kwh * 1e4, 4) + u(s.total_kwh * 1e4, 4) + u(s.total_amount * 1e4, 4)
@@ -613,7 +617,7 @@ class Station:
             reply(False, 0x01)
         elif g.session:
             reply(False, 0x02)
-        elif self.gun_fault(g) or self.disabled:
+        elif self.gun_fault(g) or self.disabled or g.forced_status in (0x00, 0x01):
             reply(False, 0x03)
         elif not g.plugged:
             reply(False, 0x05)
@@ -703,6 +707,15 @@ class Station:
                     setattr(self.a, key, value)
                 else:
                     raise ValueError(f"неизвестный параметр {key}")
+            elif cmd == "gunstatus" and g and len(p) > 2:
+                if p[2] == "auto":
+                    g.forced_status = None
+                elif int(p[2], 0) in GUN_STATUS:
+                    g.forced_status = int(p[2], 0)
+                else:
+                    raise ValueError(f"статус {p[2]}: допустимо auto, 0-3")
+                self.send_realtime(g)
+                self.send_heartbeat(g)
             elif cmd == "rt" and g:
                 self.send_realtime(g)
             elif cmd == "status":
@@ -769,7 +782,7 @@ class Station:
             guns.append({
                 "no": g.no, "status": self.gun_status(g), "statusName": GUN_STATUS[self.gun_status(g)],
                 "plugged": g.plugged, "fault": fault, "faultNames": fault_names(fault), "ownFault": g.fault,
-                "lock": g.lock,
+                "lock": g.lock, "forcedStatus": g.forced_status,
                 "waiting": "удалённый старт: ждём пистолет" if g.pending_start
                 else "ждём ответ на карту" if g.card_wait else None,
                 "session": s and {
