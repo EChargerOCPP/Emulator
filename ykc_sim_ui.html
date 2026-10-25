@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YKC симулятор</title>
+<style>
+:root {
+  --bg: #f5f6f4; --card: #ffffff; --fg: #1b1f1c; --muted: #6b726d; --border: #e2e5e1;
+  --accent: #1f9d55; --accent-soft: #e3f4ea; --warn: #c27c0e; --warn-soft: #fbf0dc;
+  --bad: #c9372c; --bad-soft: #fbe5e3; --info: #2f6fd6; --info-soft: #e4ecfb;
+  --idle: #5f6b64; --idle-soft: #eceeec; --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --p0: #b54ad1; --p1: #d9822b; --p2: #1f9d55; --p3: #2f6fd6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111412; --card: #1a1e1b; --fg: #e8ebe8; --muted: #8f978f; --border: #2b302c;
+    --accent: #3cc574; --accent-soft: #163322; --warn: #e3a33a; --warn-soft: #36290f;
+    --bad: #f0675c; --bad-soft: #3b1a17; --info: #6c9ef0; --info-soft: #172743;
+    --idle: #9aa39b; --idle-soft: #252a26; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 20px; }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+.meta { color: var(--muted); font-size: 13px; }
+.meta b { color: var(--fg); font-weight: 600; font-family: var(--mono); }
+.spacer { flex: 1; }
+main { padding: 16px 20px 40px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 360px; max-width: 1600px; margin: 0 auto; }
+@media (max-width: 1100px) { main { grid-template-columns: minmax(0, 1fr); } }
+.col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+.guns { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.s-online, .s-2 { color: var(--accent); background: var(--accent-soft); }
+.s-login { color: var(--warn); background: var(--warn-soft); }
+.s-offline, .s-0 { color: var(--idle); background: var(--idle-soft); }
+.s-1 { color: var(--bad); background: var(--bad-soft); }
+.s-3 { color: var(--info); background: var(--info-soft); }
+.s-3::before { animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+.gun-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.gun-head h3 { margin: 0; font-size: 18px; }
+.big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.metric { background: var(--bg); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.metric .k { font-size: 11.5px; color: var(--muted); }
+.metric .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.metric .v i { font-style: normal; }
+.metric .v small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.soc { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin: 2px 0 12px; }
+.soc div { height: 100%; background: var(--info); transition: width .6s; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; margin-bottom: 12px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.kv span:nth-child(even) { font-family: var(--mono); overflow-wrap: anywhere; }
+.faults { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; min-height: 0; }
+.tag { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--bad-soft); color: var(--bad); }
+.wait { font-size: 12.5px; color: var(--warn); background: var(--warn-soft); padding: 6px 10px; border-radius: 8px; margin-bottom: 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row + .row { margin-top: 8px; }
+button { font: inherit; font-size: 13px; border: 1px solid var(--border); background: var(--card); color: var(--fg);
+  padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--bad); }
+button.on { background: var(--fg); color: var(--card); border-color: var(--fg); }
+button:disabled { opacity: .45; cursor: default; }
+input, select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--fg); min-width: 0; }
+input.mono { font-family: var(--mono); width: 150px; }
+details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+.bits { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; margin-top: 8px; font-size: 12.5px; }
+.bits label { display: flex; gap: 6px; align-items: center; }
+.slots { display: grid; grid-template-columns: repeat(48, 1fr); gap: 1px; height: 22px; margin: 10px 0 4px; }
+.slots div { border-radius: 2px; }
+.slots div.now { outline: 2px solid var(--fg); outline-offset: 1px; }
+.hours { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.prices { display: grid; grid-template-columns: auto 1fr 1fr 1fr; gap: 4px 10px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.prices .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; }
+.prices .h { color: var(--muted); font-size: 11.5px; }
+.params { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.params label { font-size: 12px; color: var(--muted); display: grid; gap: 3px; }
+.params input { width: 100%; }
+.list { font-family: var(--mono); font-size: 12px; display: grid; gap: 4px; }
+.empty { color: var(--muted); font-size: 12.5px; }
+.log-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.log-tools label { font-size: 12.5px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
+#log { max-height: 560px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.fr { display: grid; grid-template-columns: 62px 22px 44px minmax(0, 1fr); gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border);
+  font-size: 12.5px; cursor: pointer; align-items: baseline; }
+.fr:hover { background: var(--bg); }
+.fr .t { color: var(--muted); font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 11.5px; }
+.fr .d { font-weight: 700; }
+.fr .d.tx { color: var(--info); }
+.fr .d.rx { color: var(--accent); }
+.fr .ty { font-family: var(--mono); color: var(--muted); }
+.fr .n { min-width: 0; }
+.fr .n b { font-weight: 600; }
+.fr .n span { color: var(--muted); }
+.fr.msg { cursor: default; color: var(--muted); }
+.fr.msg .n { font-style: italic; }
+.fr.cmd .n { color: var(--warn); font-style: normal; font-family: var(--mono); }
+.detail { padding: 8px 10px 12px 136px; border-bottom: 1px solid var(--border); background: var(--bg); }
+@media (max-width: 700px) { .detail { padding-left: 10px; } .fr { grid-template-columns: 56px 18px 40px minmax(0,1fr); } }
+.detail table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+.detail td { padding: 2px 10px 2px 0; vertical-align: top; }
+.detail td:first-child { color: var(--muted); white-space: nowrap; }
+.detail td:last-child { font-family: var(--mono); overflow-wrap: anywhere; }
+.hex { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 8px; overflow-wrap: anywhere; }
+.console { display: flex; gap: 8px; margin-top: 10px; }
+.console input { flex: 1; font-family: var(--mono); }
+.dead { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 16px; border-radius: 8px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>YKC симулятор станции</h1>
+  <span id="conn" class="pill s-offline">нет связи</span>
+  <span class="meta">станция <b id="pile">—</b></span>
+  <span class="meta">платформа <b id="server">—</b></span>
+  <span class="meta">счётчик <b id="meter">—</b> кВт·ч</span>
+  <span class="spacer"></span>
+  <button id="door">Дверь закрыта</button>
+  <button data-cmd="reconnect">Переподключиться</button>
+</header>
+
+<main>
+  <div class="col">
+    <div class="guns" id="guns"></div>
+
+    <div class="card">
+      <h2>Кадры</h2>
+      <div class="log-tools">
+        <label><input type="checkbox" id="f-hb"> пульс</label>
+        <label><input type="checkbox" id="f-msg" checked> сообщения</label>
+        <select id="f-dir"><option value="">все направления</option><option value="tx">станция → платформа</option><option value="rx">платформа → станция</option></select>
+        <input id="f-q" placeholder="поиск: 0x34, транзакция, hex…" style="flex:1; min-width:160px">
+        <button id="pause">Пауза</button>
+        <button id="clear">Очистить</button>
+      </div>
+      <div id="log"></div>
+      <form class="console" id="console">
+        <input id="cmd" placeholder="команда: plug 1, card 1 D14B0A54, set power 120, status…" autocomplete="off">
+        <button class="primary">Выполнить</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <h2>Тариф <span id="model" style="text-transform:none"></span></h2>
+      <div class="prices" id="prices"></div>
+      <div class="slots" id="slots"></div>
+      <div class="hours"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Параметры машины и станции</h2>
+      <div class="params">
+        <label>Мощность, кВт<input type="number" data-set="power" step="1"></label>
+        <label>Напряжение, В<input type="number" data-set="voltage" step="1"></label>
+        <label>Батарея, кВт·ч<input type="number" data-set="capacity" step="1"></label>
+        <label>SOC в начале, %<input type="number" data-set="soc" step="1"></label>
+      </div>
+      <div class="meta" id="limits" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Неподтверждённые транзакции</h2>
+      <div class="list" id="records"></div>
+    </div>
+
+    <div class="card">
+      <h2>Офлайн-карты</h2>
+      <div class="list" id="cards"></div>
+    </div>
+  </div>
+</main>
+<div class="dead" id="dead">Нет связи с симулятором — перезапустите скрипт</div>
+
+<script>
+const FAULTS = ["аварийная кнопка","нет выпрямительных модулей","перегрев на выходе воздуха","грозозащита AC",
+  "нет связи с DC20","нет связи с FC08","нет связи со счётчиком","нет связи со считывателем","нет связи с RC10",
+  "плата вентиляторов","предохранитель DC","высоковольтный контактор","дверь открыта"];
+const TRADE = {1: "приложение", 2: "карта", 4: "офлайн-карта", 5: "VIN"};
+const PERIODS = ["尖 пиковый+", "峰 пиковый", "平 обычный", "谷 ночной"];
+const CONN = {online: "в сети", login: "вход…", offline: "нет связи"};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = (n, d = 2) => Number(n).toLocaleString("ru-RU", {minimumFractionDigits: d, maximumFractionDigits: d});
+let state = null, paused = false, events = [], gunsSig = "";
+const cards = {};   // номер карты в поле ввода по пистолету
+
+function send(cmd) {
+  fetch("/cmd", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({cmd})});
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-cmd]");
+  if (b) send(b.dataset.cmd.replace("{card}", cards[b.dataset.gun] || "D14B0A54"));
+});
+
+function gunCard(g) {
+  const s = g.session;
+  const m = (k, v, unit = "") => `<div class="metric"><div class="k">${k}</div><div class="v">${v} <small>${unit}</small></div></div>`;
+  const charging = !!s;
+  let html = `<div class="card" data-gun="${g.no}">
+    <div class="gun-head"><h3>Пистолет ${g.no}</h3><span class="pill s-${g.status}">${esc(g.statusName)}</span></div>`;
+  html += `<div class="big">${m("Энергия", `<i data-m="kwh">${s ? fmt(s.kwh, 3) : "—"}</i>`, "кВт·ч")}${m("Сумма", `<i data-m="amount">${s ? fmt(s.amount) : "—"}</i>`)}${m("SOC", `<i data-m="soc">${s ? Math.floor(s.soc) : "—"}</i>`, "%")}</div>`;
+  html += `<div class="soc"><div data-m="bar" style="width:${s ? s.soc : 0}%"></div></div>`;
+  if (s) html += `<div class="kv">
+      <span>Мощность</span><span>${fmt(s.power, 1)} кВт · ${fmt(s.voltage, 0)} В · ${fmt(s.current, 1)} А</span>
+      <span>Начало</span><span>${s.start} · <i data-m="min">${s.minutes}</i> мин · ${TRADE[s.trade] || s.trade}</span>
+      <span>Транзакция</span><span>${s.trans}</span></div>`;
+  else html += `<div class="kv"><span>Пистолет</span><span>${g.plugged ? "вставлен в машину" : "в держателе"}</span>
+      ${state.lockEnabled ? `<span>Замок</span><span>${g.lock === 0x55 ? "поднят" : g.lock === 0xFF ? "опущен" : "не в положении"}</span>` : ""}</div>`;
+  if (g.faultNames.length) html += `<div class="faults">${g.faultNames.map(f => `<span class="tag">${esc(f)}</span>`).join("")}</div>`;
+  if (g.waiting) html += `<div class="wait">${esc(g.waiting)}</div>`;
+  html += `<div class="row">
+      <button data-cmd="${g.plugged ? "unplug" : "plug"} ${g.no}">${g.plugged ? "Вынуть пистолет" : "Вставить пистолет"}</button>
+      <button class="danger" data-cmd="stop ${g.no}" ${charging ? "" : "disabled"}>Стоп на станции</button>
+      <button data-cmd="bmserr ${g.no}" ${charging ? "" : "disabled"}>Ошибка BMS</button>
+    </div>
+    <div class="row">
+      <input class="mono" data-card="${g.no}" value="${esc(cards[g.no] || "D14B0A54")}" title="физический номер карты">
+      <button data-cmd="card ${g.no} {card}" data-gun="${g.no}" ${charging ? "disabled" : ""}>Приложить карту</button>
+      <button data-cmd="vin ${g.no}" ${charging ? "disabled" : ""}>Старт по VIN</button>
+      <button data-cmd="rt ${g.no}">0x13</button>
+      ${state.lockEnabled ? `<button data-cmd="lock ${g.no} ${g.lock === 0x55 ? "down" : "up"}">Замок ${g.lock === 0x55 ? "↓" : "↑"}</button>` : ""}
+    </div>
+    <details ${openFaults.has(g.no) ? "open" : ""} data-faults="${g.no}"><summary>Неисправности (0x${g.ownFault.toString(16).padStart(4, "0").toUpperCase()})</summary>
+      <div class="bits">${FAULTS.slice(0, 12).map((f, i) =>
+        `<label><input type="checkbox" data-bit="${i}" data-g="${g.no}" ${g.ownFault & (1 << i) ? "checked" : ""}>${esc(f)}</label>`).join("")}</div>
+    </details></div>`;
+  return html;
+}
+const openFaults = new Set();
+document.addEventListener("toggle", e => {
+  const d = e.target.closest?.("[data-faults]");
+  if (d) d.open ? openFaults.add(+d.dataset.faults) : openFaults.delete(+d.dataset.faults);
+}, true);
+document.addEventListener("change", e => {
+  const t = e.target;
+  if (t.dataset.bit !== undefined) {
+    const g = state.guns.find(x => x.no == t.dataset.g);
+    const v = g.ownFault ^ (1 << +t.dataset.bit);
+    send(`fault ${g.no} 0x${v.toString(16)}`);
+  } else if (t.dataset.set) send(`set ${t.dataset.set} ${t.value}`);
+});
+document.addEventListener("input", e => { if (e.target.dataset.card) cards[e.target.dataset.card] = e.target.value.trim(); });
+
+function renderState() {
+  const st = state;
+  $("#conn").className = `pill s-${st.conn}`;
+  $("#conn").textContent = CONN[st.conn];
+  $("#pile").textContent = st.pile;
+  $("#server").textContent = `${st.host}:${st.port}`;
+  $("#meter").textContent = fmt(st.meter, 3);
+  const door = $("#door");
+  door.textContent = st.door ? "Дверь открыта" : "Дверь закрыта";
+  door.className = st.door ? "on" : "";
+  door.dataset.cmd = st.door ? "door close" : "door open";
+  const focused = document.activeElement;
+  // карточку пересобираем только при смене состояния, цифры зарядки обновляем на месте — иначе теряются клики
+  const sig = JSON.stringify([st.lockEnabled, st.guns.map(g => ({...g, session: g.session && {...g.session, kwh: 0, amount: 0, soc: 0, minutes: 0}}))]);
+  if (sig !== gunsSig) { gunsSig = sig; $("#guns").innerHTML = st.guns.map(gunCard).join(""); }
+  for (const g of st.guns) {
+    const el = $(`[data-gun="${g.no}"].card`), s = g.session;
+    if (!el || !s) continue;
+    el.querySelector('[data-m="kwh"]').textContent = fmt(s.kwh, 3);
+    el.querySelector('[data-m="amount"]').textContent = fmt(s.amount);
+    el.querySelector('[data-m="soc"]').textContent = Math.floor(s.soc);
+    el.querySelector('[data-m="min"]').textContent = s.minutes;
+    el.querySelector('[data-m="bar"]').style.width = s.soc + "%";
+  }
+
+  const t = st.tariff;
+  $("#model").textContent = `· модель ${t.model}`;
+  $("#prices").innerHTML = `<span class="h"></span><span class="h">электричество</span><span class="h">услуга</span><span class="h">итого</span>` +
+    [0, 1, 2, 3].map(p => `<span><i class="sw" style="background:var(--p${p})"></i>${PERIODS[p]}${t.period === p ? " ●" : ""}</span>
+      <span>${t.prices[p * 2].toFixed(5)}</span><span>${t.prices[p * 2 + 1].toFixed(5)}</span>
+      <span><b>${(t.prices[p * 2] + t.prices[p * 2 + 1]).toFixed(5)}</b></span>`).join("");
+  const now = new Date(), cur = Math.floor((now.getHours() * 60 + now.getMinutes()) / 30);
+  $("#slots").innerHTML = t.slots.map((s, i) => `<div class="${i === cur ? "now" : ""}" style="background:var(--p${Math.min(s, 3)})"
+    title="${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"} — ${PERIODS[Math.min(s, 3)]}"></div>`).join("");
+
+  for (const inp of document.querySelectorAll("[data-set]"))
+    if (inp !== focused) inp.value = st.params[inp.dataset.set];
+  $("#limits").textContent = (st.disabled ? "Станция заблокирована платформой. " : "") + `Лимит мощности от платформы: ${st.maxPowerPct}%`;
+  $("#records").innerHTML = st.records.length ? st.records.map(r => `<div>${r.trans} · попытка ${r.tries}</div>`).join("") : `<div class="empty">нет</div>`;
+  $("#cards").innerHTML = st.offlineCards.length ? st.offlineCards.map(c => `<div>${c.card} (лог. ${c.logical})</div>`).join("") : `<div class="empty">платформа ещё не загружала (0x44)</div>`;
+}
+
+const logEl = $("#log");
+function visible(ev) {
+  if (ev.kind === "log") return $("#f-msg").checked || ev.msg.startsWith(">");
+  if (ev.hb && !$("#f-hb").checked) return false;
+  const dir = $("#f-dir").value;
+  if (dir && ev.dir !== dir) return false;
+  const q = $("#f-q").value.trim().toLowerCase();
+  if (q) {
+    const hay = `0x${ev.type.toString(16).padStart(2, "0")} ${ev.name} ${ev.summary} ${ev.hex} ${ev.fields.map(f => f.join(" ")).join(" ")}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+function row(ev) {
+  const d = document.createElement("div");
+  if (ev.kind === "log") {
+    d.className = "fr msg" + (ev.msg.startsWith(">") ? " cmd" : "");
+    d.innerHTML = `<span class="t">${ev.t}</span><span></span><span></span><span class="n">${esc(ev.msg)}</span>`;
+    return d;
+  }
+  d.className = "fr";
+  d.innerHTML = `<span class="t">${ev.t}</span><span class="d ${ev.dir}">${ev.dir === "tx" ? "→" : "←"}</span>
+    <span class="ty">${ev.type.toString(16).padStart(2, "0").toUpperCase()}</span>
+    <span class="n"><b>${esc(ev.name)}</b> ${ev.summary ? `<span>· ${esc(ev.summary)}</span>` : ""}</span>`;
+  d.onclick = () => {
+    if (d.nextSibling?.classList?.contains("detail")) return d.nextSibling.remove();
+    const x = document.createElement("div");
+    x.className = "detail";
+    x.innerHTML = `<table>${ev.fields.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table><div class="hex">${ev.hex}</div>`;
+    d.after(x);
+  };
+  return d;
+}
+function rerender() {
+  logEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  for (let i = events.length - 1; i >= 0; i--) if (visible(events[i])) frag.appendChild(row(events[i]));
+  logEl.appendChild(frag);
+  logEl.scrollTop = 0;
+}
+function addEvent(ev) {
+  events.push(ev);
+  if (events.length > 3000) events.splice(0, 500);
+  if (paused || !visible(ev)) return;
+  // новые кадры сверху; если пользователь прокрутил вниз и читает — не сдвигаем ему список
+  const before = logEl.scrollHeight, top = logEl.scrollTop;
+  logEl.prepend(row(ev));
+  if (top > 30) logEl.scrollTop = top + logEl.scrollHeight - before;
+  while (logEl.childElementCount > 3000) logEl.lastElementChild.remove();
+}
+for (const id of ["#f-hb", "#f-msg", "#f-dir"]) $(id).addEventListener("change", rerender);
+$("#f-q").addEventListener("input", rerender);
+$("#pause").onclick = () => { paused = !paused; $("#pause").textContent = paused ? "Продолжить" : "Пауза"; $("#pause").className = paused ? "on" : ""; if (!paused) rerender(); };
+$("#clear").onclick = () => { events = []; rerender(); };
+$("#console").onsubmit = e => { e.preventDefault(); const v = $("#cmd").value.trim(); if (v) send(v); $("#cmd").value = ""; };
+
+function connect() {
+  const es = new EventSource("/events");
+  es.onopen = () => { $("#dead").style.display = "none"; events = []; logEl.innerHTML = ""; };
+  es.onmessage = m => {
+    const ev = JSON.parse(m.data);
+    if (ev.kind === "state") { state = ev; renderState(); } else addEvent(ev);
+  };
+  es.onerror = () => { $("#dead").style.display = "block"; $("#conn").className = "pill s-offline"; $("#conn").textContent = "симулятор остановлен"; };
+}
+connect();
+</script>
+</body>
+</html>

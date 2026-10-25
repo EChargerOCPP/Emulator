@@ -1,29 +1,44 @@
-# YKC 1.6 Emulator
+# YKC 1.6 Station Simulator
 
-Эмулятор зарядной станции по протоколу YKC 1.6 для проверки шлюза EChargerOCPP.
+Симулятор зарядной станции YKC (云快充) v1.6, повторяет Mindian MDDC-120KW. Python 3.10+, без зависимостей.
 
-Протокол (`Protocol/`) — копия `YKC.Gateway/Protocol` из репозитория EChargerBack.
+- `ykc_station_sim.py` — симулятор (TCP к платформе + веб-панель)
+- `ykc_sim_ui.html` — веб-панель
+- `ykc_decode.py` — разбор кадров YKC
 
 ## Запуск
 
 ```bash
-dotnet run -- --host 127.0.0.1 --port 8767 --pile 32010200000001 --guns 2 --type dc --vin LSVTEST0000000001 --soc 30
+python ykc_station_sim.py                                   # 127.0.0.1:8767, станция 999
+python ykc_station_sim.py --host 155.212.143.161 --id 32010600019236 --power 120
 ```
 
-Команды в консоли: `plug N`, `unplug N`, `stop N`, `bmsabort N` (0x1D), `abort N` (0x21), `bmserr N` (0x1B), `quit`.
-Удалённый старт/стоп — из админки/приложения.
+Веб-панель: http://127.0.0.1:8790 (`--ui-port 0` — без панели, `--no-browser` — не открывать браузер).
 
-## Кадры
+Параметры: `--guns`, `--power`, `--voltage`, `--capacity`, `--soc`, `--vin`, `--hb`, `--rt`, `--lock` и др. — `python ykc_station_sim.py -h`.
 
-Станция → платформа: 0x01, 0x03, 0x05, 0x09, 0x13, 0x15, 0x17, 0x19, 0x1B, 0x1D, 0x21, 0x23, 0x25, 0x33, 0x35, 0x3B, 0x51, 0x55, 0x91.
+## Команды (консоль или панель; N — номер пистолета)
 
-Зарядка (DC): 0x33 → 0x13 → 0x15 → 0x17 → (0x13 + 0x23 + 0x25 каждый тик) → [0x1D/0x21] → 0x19 → 0x13 → 0x3B.
+| Команда | Действие |
+|---|---|
+| `plug N` / `unplug N` | вставить / вынуть пистолет |
+| `card N D14B0A54` | старт с карты (0x31) |
+| `vin N [VIN]` | старт по VIN (0x31, способ 0x03) |
+| `pcard 1,2 D14B0A54` | параллельная зарядка с карты (0xA1) |
+| `stop N` | остановка на станции (0x45) |
+| `bmserr N` | ошибка BMS 0x1B и остановка (0x5A) |
+| `door open\|close` | датчик двери (неисправность 0x1000) |
+| `fault N 0x0001` | биты неисправности (0 — сброс) |
+| `lock N up\|down` | замок парковки (с `--lock`) |
+| `set power\|voltage\|capacity\|soc\|meter X` | изменить параметр |
+| `rt N` | отправить 0x13 сейчас |
+| `status`, `reconnect`, `quit` | |
 
-## Linux
+Зарядка: 0x15 → 0x17 → (0x13 + 0x23 + 0x25 каждые `--rt` с) → [0x1D/0x21] → 0x19 → 0x3B (повтор до 0x40).
+
+## Linux-сервер
 
 ```bash
-dotnet publish -c Release -r linux-x64 --self-contained false -o publish
-dotnet publish/YKC.Emulator.dll --host 127.0.0.1 --port 8767
+tmux new -s ykc
+python3 ykc_station_sim.py --host 127.0.0.1 --port 8767 --no-browser
 ```
-
-Консоль интерактивная — запускать в `tmux`/`screen`.
