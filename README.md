@@ -32,6 +32,7 @@ python ykc_station_sim.py --host platform.example.com --id 32010200000001 --powe
 | `lock N up\|down` | замок парковки (с `--lock`) |
 | `set power\|voltage\|capacity\|soc\|meter X` | изменить параметр |
 | `rt N` | отправить 0x13 сейчас |
+| `connect HOST PORT ID [GUNS]` | подключиться к другой платформе / другим номером станции (в панели — «Настройки») |
 | `status`, `reconnect`, `quit` | |
 
 Зарядка: 0x15 → 0x17 → (0x13 + 0x23 + 0x25 каждые `--rt` с) → [0x1D/0x21] → 0x19 → 0x3B (повтор до 0x40).

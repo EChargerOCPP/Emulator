@@ -27,6 +27,7 @@ v1.6. Во время зарядки шлёт 0x15, 0x17, затем 0x13 + 0x23
     set power|voltage|capacity|soc|meter ЗНАЧЕНИЕ
     rt N                   отправить 0x13 сейчас
     status                 состояние пистолетов
+    connect HOST PORT ID [GUNS]  подключиться к другой платформе / другим номером станции
     reconnect              разорвать соединение и подключиться заново
     quit                   выход
 """
@@ -710,6 +711,8 @@ class Station:
                     log(f"  пистолет {gg.no}: статус 0x{self.gun_status(gg):02X}, вставлен={gg.plugged}, "
                         f"неисправность 0x{self.gun_fault(gg):04X}"
                         + (f", заряжает: {s.total_kwh:.3f} кВт·ч, {s.total_amount:.2f}, SOC {s.soc:.0f}%" if s else ""))
+            elif cmd == "connect" and len(p) > 3:
+                self.reconfigure(p[1], p[2], p[3], p[4] if len(p) > 4 else str(len(self.guns)))
             elif cmd == "reconnect":
                 self.drop("команда reconnect")
             elif cmd in ("quit", "exit"):
@@ -722,6 +725,29 @@ class Station:
         except ValueError as e:
             log(f"ошибка в команде: {e}")
         BUS.publish(self.snapshot())
+
+    def reconfigure(self, host: str, port: str, pile: str, guns: str) -> None:
+        """connect HOST PORT ID [GUNS]: сменить платформу, номер станции и число пистолетов на лету."""
+        if not host.replace(".", "").replace("-", "").isalnum():
+            raise ValueError(f"неверный адрес {host}")
+        if not port.isdigit() or not 1 <= int(port) <= 65535:
+            raise ValueError(f"неверный порт {port}")
+        if not pile.isdigit() or len(pile) > 14:
+            raise ValueError("номер станции — до 14 цифр")
+        if not guns.isdigit() or not 1 <= int(guns) <= 8:
+            raise ValueError("пистолетов — от 1 до 8")
+        if any(g.session or g.pending_start for g in self.guns):
+            raise ValueError("сначала остановите зарядку")
+        if self.pending_records:
+            log(f"   неподтверждённые записи прежней станции удалены: {len(self.pending_records)}")
+        self.a.host, self.a.port, self.a.id, self.a.guns = host, int(port), pile, int(guns)
+        self.pile = bytes.fromhex(pile.zfill(14))
+        self.guns = [Gun(i + 1) for i in range(self.a.guns)]
+        self.pending_records.clear()
+        self.offline_cards.clear()
+        self.parallel.clear()
+        log(f"станция {self.pile.hex()} -> {host}:{port}, пистолетов {self.a.guns}")
+        self.drop("новые настройки подключения")
 
     def card_start(self, g: Gun, card: bytes) -> None:
         if self.logged_in:

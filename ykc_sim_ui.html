@@ -110,6 +110,17 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margi
 .hex { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 8px; overflow-wrap: anywhere; }
 .console { display: flex; gap: 8px; margin-top: 10px; }
 .console input { flex: 1; font-family: var(--mono); }
+dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--fg); padding: 20px; width: min(440px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0, 0, 0, .35); }
+dialog h2 { font-size: 16px; margin: 0 0 14px; }
+dialog .params { margin-bottom: 14px; }
+dialog .hint { font-size: 12px; color: var(--muted); margin: -8px 0 14px; }
+.stations { display: grid; gap: 4px; margin-bottom: 8px; max-height: 220px; overflow: auto; }
+.stations label { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; font-family: var(--mono); cursor: pointer; }
+.stations label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.stations label span { flex: 1; }
+.stations button { padding: 0 8px; border: 0; background: none; color: var(--muted); font-size: 16px; }
+.dlg-err { color: var(--bad); font-size: 12.5px; min-height: 18px; margin-top: 8px; }
 .dead { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 16px; border-radius: 8px; display: none; }
 </style>
 </head>
@@ -123,7 +134,33 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margi
   <span class="spacer"></span>
   <button id="door">Дверь закрыта</button>
   <button data-cmd="reconnect">Переподключиться</button>
+  <button id="open-settings">Настройки</button>
 </header>
+
+<dialog id="settings">
+  <form id="settings-form" method="dialog">
+    <h2>Подключение</h2>
+    <div class="params">
+      <label>Сервер (IP или домен)<input id="s-host" required autocomplete="off"></label>
+      <label>Порт<input id="s-port" type="number" min="1" max="65535" required></label>
+    </div>
+    <div class="hint">Если симулятор работает на том же сервере, что и шлюз, укажите 127.0.0.1 : 8767.</div>
+    <div class="meta" style="font-size:12px; margin-bottom:6px">Номер станции (номер ЗУ из админки, до 14 цифр)</div>
+    <div class="stations" id="s-list"></div>
+    <div class="row">
+      <input id="s-new" class="mono" inputmode="numeric" placeholder="например 7" style="flex:1">
+      <button type="button" id="s-add">Добавить</button>
+    </div>
+    <div class="params" style="margin-top:14px">
+      <label>Пистолетов<input id="s-guns" type="number" min="1" max="8" required></label>
+    </div>
+    <div class="dlg-err" id="s-err"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button type="button" id="s-cancel">Отмена</button>
+      <button class="primary" id="s-connect">Подключить</button>
+    </div>
+  </form>
+</dialog>
 
 <main>
   <div class="col">
@@ -347,12 +384,86 @@ $("#pause").onclick = () => { paused = !paused; $("#pause").textContent = paused
 $("#clear").onclick = () => { events = []; rerender(); };
 $("#console").onsubmit = e => { e.preventDefault(); const v = $("#cmd").value.trim(); if (v) send(v); $("#cmd").value = ""; };
 
+// настройки подключения хранятся в браузере; симулятору уходят только по кнопке «Подключить»
+const SETTINGS_KEY = "ykc-sim.settings";
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || null; } catch { return null; }
+}
+function saveSettings(s) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
+}
+let draft = null;
+const pileNo = p => p.replace(/^0+(?=\d)/, "");
+function renderStations() {
+  $("#s-list").innerHTML = draft.stations.length ? draft.stations.map(n => `<label>
+      <input type="radio" name="s-active" value="${esc(n)}" ${n === draft.active ? "checked" : ""}>
+      <span>${esc(n)}</span><button type="button" data-del="${esc(n)}" title="убрать из списка">×</button></label>`).join("")
+    : `<div class="empty">добавьте номер станции</div>`;
+}
+function openSettings() {
+  const saved = loadSettings();
+  const cur = state && pileNo(state.pile);
+  draft = saved ? {...saved, stations: [...saved.stations]}
+    : {host: state?.host || "127.0.0.1", port: state?.port || 8767, guns: state?.guns.length || 2, stations: cur ? [cur] : [], active: cur};
+  $("#s-host").value = draft.host;
+  $("#s-port").value = draft.port;
+  $("#s-guns").value = draft.guns;
+  $("#s-new").value = "";
+  $("#s-err").textContent = "";
+  renderStations();
+  $("#settings").showModal();
+}
+function addStation() {
+  const n = $("#s-new").value.trim();
+  if (!/^\d{1,14}$/.test(n)) { $("#s-err").textContent = "Номер станции — от 1 до 14 цифр"; return; }
+  $("#s-err").textContent = "";
+  const no = pileNo(n);
+  if (!draft.stations.includes(no)) draft.stations.push(no);
+  draft.active = no;
+  $("#s-new").value = "";
+  renderStations();
+}
+$("#open-settings").onclick = openSettings;
+$("#pile").style.cursor = "pointer";
+$("#pile").onclick = openSettings;
+$("#s-cancel").onclick = () => $("#settings").close();
+$("#s-add").onclick = addStation;
+$("#s-new").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addStation(); } });
+$("#s-list").addEventListener("click", e => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    e.preventDefault();
+    draft.stations = draft.stations.filter(n => n !== del.dataset.del);
+    if (draft.active === del.dataset.del) draft.active = draft.stations[0] || null;
+    renderStations();
+  }
+});
+$("#s-list").addEventListener("change", e => { if (e.target.name === "s-active") draft.active = e.target.value; });
+$("#settings-form").onsubmit = e => {
+  if ($("#s-new").value.trim()) addStation();
+  const host = $("#s-host").value.trim(), port = +$("#s-port").value, guns = +$("#s-guns").value;
+  const err = !/^[A-Za-z0-9.-]+$/.test(host) ? "Неверный адрес сервера"
+    : !(port >= 1 && port <= 65535) ? "Порт — от 1 до 65535"
+    : !(guns >= 1 && guns <= 8) ? "Пистолетов — от 1 до 8"
+    : !draft.active ? "Выберите или добавьте номер станции"
+    : state?.guns.some(g => g.session || g.waiting) ? "Сначала остановите зарядку" : "";
+  if (err) { e.preventDefault(); $("#s-err").textContent = err; return; }
+  Object.assign(draft, {host, port, guns});
+  saveSettings(draft);
+  send(`connect ${host} ${port} ${draft.active} ${guns}`);
+};
+
 function connect() {
   const es = new EventSource("/events");
   es.onopen = () => { $("#dead").style.display = "none"; events = []; logEl.innerHTML = ""; };
   es.onmessage = m => {
     const ev = JSON.parse(m.data);
-    if (ev.kind === "state") { state = ev; renderState(); } else addEvent(ev);
+    if (ev.kind === "state") {
+      const first = !state;
+      state = ev;
+      renderState();
+      if (first && !loadSettings()) openSettings();   // первый визит — сразу спросить, куда подключаться
+    } else addEvent(ev);
   };
   es.onerror = () => { $("#dead").style.display = "block"; $("#conn").className = "pill s-offline"; $("#conn").textContent = "симулятор остановлен"; };
 }
