@@ -35,6 +35,8 @@ import argparse
 import asyncio
 import collections
 import datetime
+import hashlib
+import hmac
 import json
 import os
 import sys
@@ -791,19 +793,73 @@ class Station:
 
 # ---------- веб-панель ----------
 
+# Вход в панель включается переменными окружения YKC_UI_USER и YKC_UI_PASSWORD; без них панель открыта.
+# Сессия — cookie «срок.подпись»: подпись HMAC от срока на ключе из логина и пароля,
+# поэтому сессии переживают перезапуск, а смена пароля их сбрасывает.
+UI_USER = os.environ.get("YKC_UI_USER", "")
+UI_PASSWORD = os.environ.get("YKC_UI_PASSWORD", "")
+SESSION_COOKIE, SESSION_DAYS = "ykc_session", 30
+
+
+def session_sign(expires: str) -> str:
+    key = hashlib.sha256(f"ykc-sim:{UI_USER}:{UI_PASSWORD}".encode()).digest()
+    return hmac.new(key, expires.encode(), "sha256").hexdigest()
+
+
+def session_ok(headers: dict) -> bool:
+    if not UI_PASSWORD:
+        return True
+    for part in headers.get("cookie", "").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == SESSION_COOKIE:
+            expires, _, sig = value.partition(".")
+            return expires.isdigit() and int(expires) > time.time() and hmac.compare_digest(sig, session_sign(expires))
+    return False
+
+
 async def http_handler(station: Station, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
         head = (await reader.readuntil(b"\r\n\r\n")).decode("latin-1")
         method, path, _ = head.split("\r\n", 1)[0].split(" ", 2)
         headers = {k.lower(): v for k, _, v in (h.partition(": ") for h in head.split("\r\n")[1:]) if v}
 
-        def respond(status: str, ctype: str, data: bytes) -> None:
+        def respond(status: str, ctype: str, data: bytes, extra: str = "") -> None:
             writer.write(f"HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {len(data)}\r\n"
-                         f"Cache-Control: no-store\r\nConnection: close\r\n\r\n".encode() + data)
+                         f"Cache-Control: no-store\r\nConnection: close\r\n{extra}\r\n".encode() + data)
+
+        def set_cookie(value: str, max_age: int) -> str:
+            secure = "; Secure" if headers.get("x-forwarded-proto") == "https" else ""
+            return f"Set-Cookie: {SESSION_COOKIE}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Strict{secure}\r\n"
+
+        async def body() -> bytes:
+            n = int(headers.get("content-length", "0"))
+            if n > 65536:
+                raise ValueError("слишком большой запрос")
+            return await reader.readexactly(n)
 
         if method == "GET" and path in ("/", "/index.html"):
             with open(UI_PATH, "rb") as f:
                 respond("200 OK", "text/html; charset=utf-8", f.read())
+        elif method == "GET" and path == "/session":
+            ok = session_ok(headers)
+            respond("200 OK" if ok else "401 Unauthorized", "application/json",
+                    json.dumps({"ok": ok, "auth": bool(UI_PASSWORD)}).encode())
+        elif method == "POST" and path == "/login":
+            data = json.loads(await body() or b"{}")
+            user, password = str(data.get("user", "")), str(data.get("password", ""))
+            if UI_PASSWORD and hmac.compare_digest(user.encode(), UI_USER.encode()) \
+                    and hmac.compare_digest(password.encode(), UI_PASSWORD.encode()):
+                expires = str(int(time.time()) + SESSION_DAYS * 86400)
+                log(f"вход в панель: {user}")
+                respond("200 OK", "application/json", b'{"ok":true}',
+                        set_cookie(f"{expires}.{session_sign(expires)}", SESSION_DAYS * 86400))
+            else:
+                await asyncio.sleep(1)   # притормозить перебор
+                respond("401 Unauthorized", "application/json", b'{"ok":false}')
+        elif method == "POST" and path == "/logout":
+            respond("200 OK", "application/json", b'{"ok":true}', set_cookie("", 0))
+        elif path in ("/events", "/cmd") and not session_ok(headers):
+            respond("401 Unauthorized", "application/json", b'{"ok":false}')
         elif method == "GET" and path == "/events":
             writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\n"
                          b"Cache-Control: no-store\r\nConnection: keep-alive\r\n\r\n")
@@ -823,13 +879,12 @@ async def http_handler(station: Station, reader: asyncio.StreamReader, writer: a
             finally:
                 BUS.subs.discard(q)
         elif method == "POST" and path == "/cmd":
-            data = await reader.readexactly(int(headers.get("content-length", "0")))
-            station.command(json.loads(data or b"{}").get("cmd", ""))
+            station.command(json.loads(await body() or b"{}").get("cmd", ""))
             respond("200 OK", "application/json", b'{"ok":true}')
         else:
             respond("404 Not Found", "text/plain", b"not found")
         await writer.drain()
-    except (OSError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ValueError):
+    except (OSError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ValueError, AttributeError):
         pass
     finally:
         writer.close()

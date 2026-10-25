@@ -15,6 +15,8 @@ python ykc_station_sim.py --host platform.example.com --id 32010200000001 --powe
 
 Веб-панель: http://127.0.0.1:8790 (`--ui-port 0` — без панели, `--no-browser` — не открывать браузер).
 
+Вход в панель: задайте переменные окружения `YKC_UI_USER` и `YKC_UI_PASSWORD` — панель покажет форму входа (сессия 30 дней, cookie). Без них панель открыта.
+
 Параметры: `--guns`, `--power`, `--voltage`, `--capacity`, `--soc`, `--vin`, `--hb`, `--rt`, `--lock` и др. — `python ykc_station_sim.py -h`.
 
 ## Команды (консоль или панель; N — номер пистолета)

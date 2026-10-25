@@ -120,6 +120,13 @@ dialog .hint { font-size: 12px; color: var(--muted); margin: -8px 0 14px; }
 .stations label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .stations label span { flex: 1; }
 .stations button { padding: 0 8px; border: 0; background: none; color: var(--muted); font-size: 16px; }
+.login { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: none; align-items: center; justify-content: center; padding: 16px; }
+.login.show { display: flex; }
+.login form { width: min(360px, 100%); display: grid; gap: 12px; }
+.login h1 { font-size: 18px; margin: 0 0 4px; }
+.login label { font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
+.login input { width: 100%; font-size: 14px; padding: 8px 10px; }
+.login button { padding: 8px 12px; font-size: 14px; }
 .dlg-err { color: var(--bad); font-size: 12.5px; min-height: 18px; margin-top: 8px; }
 .dead { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 16px; border-radius: 8px; display: none; }
 </style>
@@ -135,7 +142,18 @@ dialog .hint { font-size: 12px; color: var(--muted); margin: -8px 0 14px; }
   <button id="door">Дверь закрыта</button>
   <button data-cmd="reconnect">Переподключиться</button>
   <button id="open-settings">Настройки</button>
+  <button id="logout" hidden>Выйти</button>
 </header>
+
+<div class="login" id="login">
+  <form class="card" id="login-form">
+    <h1>YKC симулятор станции</h1>
+    <label>Логин<input id="l-user" name="username" autocomplete="username" required></label>
+    <label>Пароль<input id="l-password" name="password" type="password" autocomplete="current-password" required></label>
+    <div class="dlg-err" id="l-err"></div>
+    <button class="primary" id="l-submit">Войти</button>
+  </form>
+</div>
 
 <dialog id="settings">
   <form id="settings-form" method="dialog">
@@ -230,7 +248,8 @@ let state = null, paused = false, events = [], gunsSig = "";
 const cards = {};   // номер карты в поле ввода по пистолету
 
 function send(cmd) {
-  fetch("/cmd", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({cmd})});
+  fetch("/cmd", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({cmd})})
+    .then(r => { if (r.status === 401) showLogin(); });
 }
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-cmd]");
@@ -453,8 +472,37 @@ $("#settings-form").onsubmit = e => {
   send(`connect ${host} ${port} ${draft.active} ${guns}`);
 };
 
+// вход: /session отвечает 401, пока нет cookie сессии (если в симуляторе задан пароль)
+let es = null;
+function showLogin() {
+  if (es) { es.close(); es = null; }
+  $("#dead").style.display = "none";
+  $("#login").classList.add("show");
+  $("#l-err").textContent = "";
+  $("#l-user").focus();
+}
+async function boot() {
+  const r = await fetch("/session").catch(() => null);
+  if (!r) { $("#dead").style.display = "block"; setTimeout(boot, 3000); return; }
+  const s = await r.json();
+  $("#logout").hidden = !s.auth;
+  if (!s.ok) return showLogin();
+  $("#login").classList.remove("show");
+  connect();
+}
+$("#login-form").onsubmit = async e => {
+  e.preventDefault();
+  $("#l-submit").disabled = true;
+  const r = await fetch("/login", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({user: $("#l-user").value.trim(), password: $("#l-password").value})}).catch(() => null);
+  $("#l-submit").disabled = false;
+  if (r?.ok) { $("#l-password").value = ""; boot(); }
+  else $("#l-err").textContent = r ? "Неверный логин или пароль" : "Нет связи с симулятором";
+};
+$("#logout").onclick = async () => { await fetch("/logout", {method: "POST"}).catch(() => null); showLogin(); };
+
 function connect() {
-  const es = new EventSource("/events");
+  es = new EventSource("/events");
   es.onopen = () => { $("#dead").style.display = "none"; events = []; logEl.innerHTML = ""; };
   es.onmessage = m => {
     const ev = JSON.parse(m.data);
@@ -465,9 +513,13 @@ function connect() {
       if (first && !loadSettings()) openSettings();   // первый визит — сразу спросить, куда подключаться
     } else addEvent(ev);
   };
-  es.onerror = () => { $("#dead").style.display = "block"; $("#conn").className = "pill s-offline"; $("#conn").textContent = "симулятор остановлен"; };
+  es.onerror = () => {
+    $("#dead").style.display = "block"; $("#conn").className = "pill s-offline"; $("#conn").textContent = "симулятор остановлен";
+    // сам EventSource не переподключается после 401 — проверяем сессию заново
+    if (es?.readyState === EventSource.CLOSED) { es = null; setTimeout(boot, 2000); }
+  };
 }
-connect();
+boot();
 </script>
 </body>
 </html>
